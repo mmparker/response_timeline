@@ -1,0 +1,127 @@
+
+
+
+
+```{r setup, echo=FALSE,results='hide', message=FALSE, warning=FALSE}
+
+# Strings aren't factors
+options(stringsAsFactors = FALSE)
+
+library(knitr)
+library(ggplot2)
+library(gridExtra)
+library(scales)
+library(mpmisc)
+library(plyr)
+
+
+
+# Set default chunk options
+opts_chunk$set(echo = FALSE,
+               comment = "",
+               message = FALSE,
+               warning = FALSE,
+               error = TRUE,
+               fig.width = 9,
+               dev="jpeg",
+               tidy=FALSE,
+               cache = FALSE)
+
+
+
+# Set some plot parameters that will want tweaking
+point_size <- 3
+line_size <- 1.3
+colorwheel <- c("#31A354", "#ADDD8E", "#F03B20", "#43A2CA")
+
+
+# Custom theme
+theme_tb <- theme_bw() +
+            theme(legend.key.width = unit(.75, "inches"))
+
+
+```
+
+
+
+```{r dataprep}
+
+# Identify the zip file containing the results
+datafile <- list.files(pattern = "*.zip")
+
+# Extract the collector list
+collectors <- read.csv(unz(datafile, file.path("CSV", "CollectorList.csv")))
+
+# Extract the survey results
+results <-  read.csv(unz(datafile, file.path("CSV", "Sheet_1.csv")),
+                     check.names = FALSE,
+                     na.strings = c("NA", ""))
+
+# Merge collector info onto the results
+rescoll <- merge(x = results,
+                 y = collectors,
+                 by = "CollectorID",
+                 all.x = TRUE)
+
+
+# Compute a simple response date
+rescoll$response_date <- as.Date(rescoll$EndDate, format = "%m/%d/%Y %H:%M")
+
+
+```
+
+
+
+# Survey Responses Over Time
+
+Total responses to date: `r nrow(rescoll)`
+
+```{r plot, fig.width=10}
+
+ggplot(rescoll, aes(x = response_date)) +
+    geom_histogram(aes(fill = Title), color = "black", binwidth = 1) +
+    labs(x = "Response date", y = "Number of responses") +
+    expand_limits(x = Sys.Date()) +
+    scale_x_date(labels = date_format("%b %d"),
+                 breaks = date_breaks("day")) +
+    scale_fill_discrete("Survey") +
+    theme_tb + theme(axis.text.x = element_text(angle = 70, hjust = 1.30, vjust = 1.3))
+
+```
+
+
+```{r table, results='asis'}
+
+# Aggregate the results
+response_table <- count(rescoll, "response_date")
+
+
+# Fill out the dates with no responses
+alldates <- seq(from = min(rescoll$response_date, na.rm = TRUE),
+                to = Sys.Date(),
+                by = "day")
+
+filldates <- data.frame(response_date = alldates[!alldates %in% rescoll$response_date],
+                        freq = 0)
+
+
+# Stack and sort
+date_table <- arrange(rbind(response_table, filldates), response_date)
+
+# Add daily percentages and cumulative
+date_table$percent <- with(date_table, round(freq / sum(freq, na.rm = TRUE) * 100, 1))
+
+date_table$cumupercent <- cumsum(date_table$percent)
+             
+# Make number of respondents an integer for nicer printing
+date_table$freq <- as.integer(date_table$freq)
+
+# Pretty names
+names(date_table) <- c("Response Date", "Number of Respondents", 
+                       "Percent of Respondents", "Cumulative Percent")
+
+dfprintif(date_table, printdigits = 1)
+
+
+```
+
